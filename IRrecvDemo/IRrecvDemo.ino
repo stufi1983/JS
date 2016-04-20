@@ -1,3 +1,6 @@
+#include <IRremote.h>
+#include "IRremoteSetting.h"
+
 //IC4094
 //Pin connected  Strobe (pin 1)
 int strobePin = 8;
@@ -20,8 +23,12 @@ byte segChar[] = {0x04, 0x2f, 0x18, 0x09, 0x23, 0x41, 0x40, 0x0f, 0x00, 0x01};
 #include "Wire.h"
 #define DS3231_I2C_ADDRESS 0x68
 
-void setup() {
+
+void setup()
+{
+  irrecv.enableIRIn(); // Start the receiver
   //set pins to output because they are addressed in the main loop
+
   pinMode(strobePin, OUTPUT);
   pinMode(clockPin, OUTPUT);
   pinMode(dataPin, OUTPUT);
@@ -32,28 +39,44 @@ void setup() {
 
   // setDS3231time( 00,  38,  15,  02,  19,  04,  16);
   //delay(65535);
-  
-   Serial.begin(9600);
+
+  Serial.begin(9600);
 }
 
-void loop() {
+long rsl = 0;
 
+enum mode {RUN, EDIT};
+
+byte mode = RUN;
+
+void loop() {
+  if (REMOTEPRESS) {
+    if (results.value != 0xFFFFFFFF)
+      rsl = results.value;
+    irrecv.resume(); // Receive the next value
+    if (rsl == tombolRemote[EQ]) {mode=EDIT;}
+    Serial.println(rsl, HEX);
+    //delay(30);
+
+
+  }
   //Bac RTC
   byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
   readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
 
   STARTDIGIT
 
-  // displayMenitDetik(minute,second);
-  displayJamMenit(hour, minute);
+  if (mode == EDIT)
+    displayMenitDetik(minute, second);
+  if (mode == RUN)
+    displayJamMenit(hour, minute);
   //Serial.println(second);
   ENDDIGIT
 
-  //delay(1000);
+  //delay(100);
 }
-
 void displayMenitDetik(byte menit, byte detik) {
-  displayJamMenit(menit, menit);
+  displayJamMenit(menit, detik);
 }
 void displayJamMenit(byte jam, byte menit) {
   int angka = jam * 100 + menit;
