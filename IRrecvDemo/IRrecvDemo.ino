@@ -1,96 +1,85 @@
 #include <IRremote.h>
 #include "IRremoteSetting.h"
+long rsl = 0;
 
-//IC4094
-//Pin connected  Strobe (pin 1)
-int strobePin = 8;
-//Pin connected  Data (pin 2)
-int dataPin = 9;
-//Pin connected  Clock (pin 3)
-int clockPin = 10;
+#include "4094Setting.h"
 
-//Pin OE (pin 15)
-int oePin = A2;
-
-byte segChar[] = {0x04, 0x2f, 0x18, 0x09, 0x23, 0x41, 0x40, 0x0f, 0x00, 0x01};
-#define STARTDIGIT digitalWrite(strobePin, LOW);
-#define ENDDIGIT digitalWrite(strobePin, HIGH);
-
-//RTC  DS3231
-//A4 - SDA
-//A5 - SCL
-
-#include "Wire.h"
+//RTC  DS3231 //A4 - SDA //A5 - SCL
+#include <Wire.h>
 #define DS3231_I2C_ADDRESS 0x68
+#include "RTCSetting.h"
+byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
 
+
+#include <TimerOne.h>
+volatile bool timeUpdate = false;
+enum mode {RUN, EDIT};
+byte mode = EDIT;
 
 void setup()
 {
-  irrecv.enableIRIn(); // Start the receiver
-  //set pins to output because they are addressed in the main loop
+  irrecv.enableIRIn(); // Start the IR receiver
+  enable4094(); //Start 4094
+  Wire.begin(); //RTC
+  Serial.begin(9600); //Serial
 
-  pinMode(strobePin, OUTPUT);
-  pinMode(clockPin, OUTPUT);
-  pinMode(dataPin, OUTPUT);
-  pinMode(oePin, OUTPUT);
-  digitalWrite(oePin, HIGH);
+  //uncomment to set RTC time
+  //setDS3231time( 00,  38,  15,  02,  19,  04,  16); delay(65535);
+  Timer1.initialize(1000000); // set a timer of length 100000 microseconds (or 0.1 sec - or 10Hz => the led will blink 5 times, 5 cycles of on-and-off, per second)
+  Timer1.attachInterrupt( timerIsr ); // attach the service routine here
 
-  Wire.begin();
-
-  // setDS3231time( 00,  38,  15,  02,  19,  04,  16);
-  //delay(65535);
-
-  Serial.begin(9600);
 }
 
-long rsl = 0;
-
-enum mode {RUN, EDIT};
-
-byte mode = RUN;
 
 void loop() {
   if (REMOTEPRESS) {
     if (results.value != 0xFFFFFFFF)
       rsl = results.value;
     irrecv.resume(); // Receive the next value
-    if (rsl == tombolRemote[EQ]) {mode=EDIT;}
-    Serial.println(rsl, HEX);
-    //delay(30);
-
-
+    if (rsl == tombolRemote[EQ]) {
+      mode = EDIT;
+    }
+    //Serial.println(rsl, HEX);
   }
-  //Bac RTC
-  byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
-  readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
 
-  STARTDIGIT
+  if (timeUpdate) {
+    readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
+    STARTDIGIT
+    if (mode == EDIT)
+      displayMenitDetik(minute, second);
+    if (mode == RUN)
+      displayJamMenit(hour, minute);
+    ENDDIGIT
+    timeUpdate = false;
+  }
+  Serial.println(second);
 
-  if (mode == EDIT)
-    displayMenitDetik(minute, second);
-  if (mode == RUN)
-    displayJamMenit(hour, minute);
-  //Serial.println(second);
-  ENDDIGIT
-
-  //delay(100);
-}
-void displayMenitDetik(byte menit, byte detik) {
-  displayJamMenit(menit, detik);
-}
-void displayJamMenit(byte jam, byte menit) {
-  int angka = jam * 100 + menit;
-  displayDigit(menit % 10);
-  displayDigit(menit / 10);
-  displayDigit(jam % 10);
-  displayDigit(jam / 10);
 }
 
-void displayDigit(byte digit) {
-  shiftOut(dataPin, clockPin, MSBFIRST, segChar[digit]);
+///Timer
+void timerIsr()
+{
+  //Baca RTC
+  timeUpdate = true;
 }
 
-///RTC
+///RTC Function
+void setDS3231time(byte second, byte minute, byte hour, byte dayOfWeek, byte
+                   dayOfMonth, byte month, byte year)
+{
+  // sets time and date data to DS3231
+  Wire.beginTransmission(DS3231_I2C_ADDRESS);
+  Wire.write(0); // set next input to start at the seconds register
+  Wire.write(decToBcd(second)); // set seconds
+  Wire.write(decToBcd(minute)); // set minutes
+  Wire.write(decToBcd(hour)); // set hours
+  Wire.write(decToBcd(dayOfWeek)); // set day of week (1=Sunday, 7=Saturday)
+  Wire.write(decToBcd(dayOfMonth)); // set date (1 to 31)
+  Wire.write(decToBcd(month)); // set month
+  Wire.write(decToBcd(year)); // set year (0 to 99)
+  Wire.endTransmission();
+}
+
 void readDS3231time(byte *second,
                     byte *minute,
                     byte *hour,
@@ -113,25 +102,4 @@ void readDS3231time(byte *second,
   *year = bcdToDec(Wire.read());
 }
 
-void setDS3231time(byte second, byte minute, byte hour, byte dayOfWeek, byte
-                   dayOfMonth, byte month, byte year)
-{
-  // sets time and date data to DS3231
-  Wire.beginTransmission(DS3231_I2C_ADDRESS);
-  Wire.write(0); // set next input to start at the seconds register
-  Wire.write(decToBcd(second)); // set seconds
-  Wire.write(decToBcd(minute)); // set minutes
-  Wire.write(decToBcd(hour)); // set hours
-  Wire.write(decToBcd(dayOfWeek)); // set day of week (1=Sunday, 7=Saturday)
-  Wire.write(decToBcd(dayOfMonth)); // set date (1 to 31)
-  Wire.write(decToBcd(month)); // set month
-  Wire.write(decToBcd(year)); // set year (0 to 99)
-  Wire.endTransmission();
-}
-byte decToBcd(byte val) {
-  return ( (val / 10 * 16) + (val % 10) );
-}
-byte bcdToDec(byte val) {
-  return ( (val / 16 * 10) + (val % 16) );
-}
 
