@@ -2,6 +2,7 @@
 #include "IRremoteSetting.h"
 long rsl = 0;
 
+byte tanggalJam[14];//yp=0,ys=0,yr=2,ysr=0,mp=0,ms=0,dp=0,ds=0,sp=0,ss=0,mp=0,ms=0,hp=0,hs=0
 #include "4094Setting.h"
 
 //RTC  DS3231 //A4 - SDA //A5 - SCL
@@ -52,43 +53,127 @@ void setup()
 
   //mode =  ALARM; tempReg = IQOMAT;
   mode =  STDBY; tempReg = 0;
-
+  //mode = EDIT;
   pinMode(pinBuzzer, OUTPUT);
 }
-
+byte tanggalJamSetting[14];
+bool startSetting = false; byte jamdigitPos = 0;
 byte i = 0;
+
+void updateJamSetting() {
+  STARTDIGITTHN
+  for (byte x = 0; x < 14; x++) {
+    displayDigitThn(tanggalJamSetting[x]);
+  }
+  ENDDIGITTHN
+}
+void updateRTC(){
+  setDS3231time(  tanggalJamSetting[9]*10+tanggalJamSetting[8],  tanggalJamSetting[11]*10+tanggalJamSetting[10],   tanggalJamSetting[13]*10+tanggalJamSetting[12],dayOfWeek,  
+  tanggalJamSetting[7]*10+tanggalJamSetting[6],  tanggalJamSetting[5]*10+tanggalJamSetting[4],  tanggalJamSetting[1]*10+tanggalJamSetting[0]);
+}
 void loop() {
   if (REMOTEPRESS) {
-    if (results.value != 0xFFFFFFFF)
+    //if (results.value != 0xFFFFFFFF)
       rsl = results.value;
+    Serial.println(results.value, HEX);
     irrecv.resume(); // Receive the next value
+
     if (rsl == tombolRemote[EQ]) {
-      mode = EDIT;
+      if (mode != EDIT) {
+        mode = EDIT;
+        startSetting = true;
+      }
+      else {
+        //mode = STDBY;
+      }
+    }
+
+    if (mode == EDIT) {
+      if (rsl == tombolRemote[NOL]) {
+        tanggalJamSetting[14 - jamdigitPos] = 0;
+        jamdigitPos++; updateJamSetting();
+      }
+      if (rsl == tombolRemote[SATU]) {
+        tanggalJamSetting[14 - jamdigitPos] = 1;
+        jamdigitPos++; updateJamSetting();
+      }
+      if (rsl == tombolRemote[DUA]) {
+        tanggalJamSetting[14 - jamdigitPos] = 2;
+        jamdigitPos++; updateJamSetting();
+      }
+      if (rsl == tombolRemote[TIGA]) {
+        tanggalJamSetting[14 - jamdigitPos] = 3;
+        jamdigitPos++; updateJamSetting();
+      }
+      if (rsl == tombolRemote[EMPAT]) {
+        tanggalJamSetting[14 - jamdigitPos] = 4;
+        jamdigitPos++; updateJamSetting();
+      }
+      if (rsl == tombolRemote[LIMA]) {
+        tanggalJamSetting[14 - jamdigitPos] = 5;
+        jamdigitPos++; updateJamSetting();
+      }
+      if (rsl == tombolRemote[ENAM]) {
+        tanggalJamSetting[14 - jamdigitPos] = 6;
+        jamdigitPos++; updateJamSetting();
+      }
+      if (rsl == tombolRemote[TUJUH]) {
+        tanggalJamSetting[14 - jamdigitPos] = 7;
+        jamdigitPos++; updateJamSetting();
+      }
+      if (rsl == tombolRemote[DELAPAN]) {
+        tanggalJamSetting[14 - jamdigitPos] = 8;
+        jamdigitPos++; updateJamSetting();
+      }
+      if (rsl == tombolRemote[SEMBILAN]) {
+        tanggalJamSetting[14 - jamdigitPos] = 9;
+        jamdigitPos++; updateJamSetting();
+      }
+
+      if (jamdigitPos > 14) {
+        mode = STDBY;
+        updateRTC();
+      }
     }
     //Serial.println(rsl, HEX);
   }
 
-  if (timeUpdate) {
-    readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
+  if (mode == STDBY) {
+    if (timeUpdate) {
+      readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
 
-    STARTDIGITTHN
-    displayTglBulanTahun(dayOfMonth, month, year);
-    displayJamMenitThn(hour, minute, second);
-    ENDDIGITTHN
+      STARTDIGITTHN
+      displayTglBulanTahun(dayOfMonth, month, year);
+      displayJamMenitThn(hour, minute, second);
+      ENDDIGITTHN
 
-    updateJadwal(month, dayOfMonth, hour, minute);
+      updateJadwal(month, dayOfMonth, hour, minute);
 
-    timeUpdate = false;
-    if (tempReg > (0 - BUZZERSHOLAT)) {
-      tempReg--;
+      timeUpdate = false;
+      if (tempReg > (0 - BUZZERSHOLAT)) {
+        tempReg--;
+      }
+
+      ledStat = !ledStat;
+
+      if ((lastDay != dayOfMonth) && (lastMonth != month)) {
+        dateUpdate = true;
+      }
+
     }
+  }
 
-    ledStat = !ledStat;
-
-    if ((lastDay != dayOfMonth) && (lastMonth != month)) {
-      dateUpdate = true;
+  if (mode == EDIT) {
+    if (startSetting) {
+      STARTDIGITTHN
+      for (byte x = 0; x < 14; x++) {
+        tanggalJamSetting[x] = 10;//tanggalJam[x];
+        displayDigitThn(tanggalJamSetting[x]);
+      }
+      ENDDIGITTHN
+      startSetting = false;
+      jamdigitPos = 0;
     }
-
   }
 
   if (dateUpdate) {

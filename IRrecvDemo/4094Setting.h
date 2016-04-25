@@ -12,7 +12,7 @@ byte segChar[] = {0x04, 0x2f, 0x18, 0x09, 0x23, 0x41, 0x40, 0x0f, 0x00, 0x01};
 #define strobePinThn 11
 #define dataPinThn  12
 #define clockPinThn  13
-byte segCharThn[] = {0x7b,0x12,0x67,0x37,0x1e,0x3d,0x7d,0x13,0x7f,0x3f};
+byte segCharThn[] = {0x7b,0x12,0x67,0x37,0x1e,0x3d,0x7d,0x13,0x7f,0x3f,0x04};
 #define STARTDIGITTHN digitalWrite(strobePinThn, LOW);
 #define ENDDIGITTHN digitalWrite(strobePinThn, HIGH);
 
@@ -30,22 +30,22 @@ void displayDigitThn(byte digit) {
   shiftOut(dataPinThn, clockPinThn, MSBFIRST, segCharThn[digit]);
 }
 void displayJamMenitThn(byte jam, byte menit, byte detik) {
-  displayDigitThn(detik % 10);
-  displayDigitThn(detik / 10);
-  displayDigitThn(menit % 10);
-  displayDigitThn(menit / 10);
-  displayDigitThn(jam % 10);
-  displayDigitThn(jam / 10);
+  displayDigitThn(detik % 10);tanggalJam[8]=detik % 10;
+  displayDigitThn(detik / 10);tanggalJam[9]=detik / 10;
+  displayDigitThn(menit % 10);tanggalJam[10]=menit % 10;
+  displayDigitThn(menit / 10);tanggalJam[11]=menit / 10;
+  displayDigitThn(jam % 10);tanggalJam[12]=jam % 10;
+  displayDigitThn(jam / 10); tanggalJam[13]=jam / 10;
 }
 void displayTglBulanTahun(byte tgl, byte bln, byte tahun) {
-  displayDigitThn(tahun % 10);
-  displayDigitThn(tahun / 10);
-  displayDigitThn(0);
-  displayDigitThn(2);
-  displayDigitThn(bln % 10);
-  displayDigitThn(bln / 10);
-  displayDigitThn(tgl % 10);
-  displayDigitThn(tgl / 10);
+  displayDigitThn(tahun % 10);tanggalJam[0]=tahun % 10;
+  displayDigitThn(tahun / 10);tanggalJam[1]=tahun / 10;
+  displayDigitThn(0);tanggalJam[2]=0;
+  displayDigitThn(2);tanggalJam[3]=2;
+  displayDigitThn(bln % 10); tanggalJam[4]=bln % 10;
+  displayDigitThn(bln / 10); tanggalJam[5]=bln / 10;
+  displayDigitThn(tgl % 10); tanggalJam[6]=tgl % 10;
+  displayDigitThn(tgl / 10); tanggalJam[7]=tgl / 10;
 }
 
 
