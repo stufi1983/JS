@@ -1,16 +1,17 @@
+#include "MKeySetting.h"
 #include <IRremote.h>
 #include "IRremoteSetting.h"
 long rsl = 0;
 
 byte tanggalJam[14];//yp=0,ys=0,yr=2,ysr=0,mp=0,ms=0,dp=0,ds=0,sp=0,ss=0,mp=0,ms=0,hp=0,hs=0
-#include "4094Setting.h"
+#include "IC4094Setting.h"
 
 //RTC  DS3231 //A4 - SDA //A5 - SCL
 #include <Wire.h>
 #define DS3231_I2C_ADDRESS 0x68
 #include "RTCSetting.h"
 byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
-bool dateUpdate = false; byte lastDay = 0; byte lastMonth = 0;
+bool changeDay = false; byte lastDay = 0; byte lastMonth = 0;
 
 #include <TimerOne.h>
 volatile bool timeUpdate = false;
@@ -23,11 +24,10 @@ byte mode = EDIT;
 #define IQOMAT 10//300 //detik                                                            
 #define BUZZERON 3 //detik
 #define BUZZERSHOLAT 5 //kali
-#define pinBuzzer 7
+#define pinBuzzer A1
 boolean buzzerStatus = false;
 
-#define led 6
-boolean ledStat = false;  //also as flag every 1 second
+boolean timeTick = false;  //also as flag every 1 second
 
 static int tempReg = 0; //temporary iqomat timer in second
 
@@ -49,12 +49,18 @@ void setup()
   Timer1.attachInterrupt( timerIsr ); // attach the service routine here
 
   readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
-  dateUpdate = true;
+  changeDay = true;
 
   //mode =  ALARM; tempReg = IQOMAT;
   mode =  STDBY; tempReg = 0;
   //mode = EDIT;
+
   pinMode(pinBuzzer, OUTPUT);
+  
+  //JP IMSAK
+  pinMode(MK_IMSAK, INPUT);           // set pin to input
+  digitalWrite(MK_IMSAK, HIGH);       // turn on pullup resistors
+
 }
 byte tanggalJamSetting[14];
 bool startSetting = false; byte jamdigitPos = 0;
@@ -67,14 +73,16 @@ void updateJamSetting() {
   }
   ENDDIGITTHN
 }
-void updateRTC(){
-  setDS3231time(  tanggalJamSetting[9]*10+tanggalJamSetting[8],  tanggalJamSetting[11]*10+tanggalJamSetting[10],   tanggalJamSetting[13]*10+tanggalJamSetting[12],dayOfWeek,  
-  tanggalJamSetting[7]*10+tanggalJamSetting[6],  tanggalJamSetting[5]*10+tanggalJamSetting[4],  tanggalJamSetting[1]*10+tanggalJamSetting[0]);
+void updateRTC() {
+  setDS3231time(  tanggalJamSetting[9] * 10 + tanggalJamSetting[8],  tanggalJamSetting[11] * 10 + tanggalJamSetting[10],   tanggalJamSetting[13] * 10 + tanggalJamSetting[12], dayOfWeek,
+                  tanggalJamSetting[7] * 10 + tanggalJamSetting[6],  tanggalJamSetting[5] * 10 + tanggalJamSetting[4],  tanggalJamSetting[1] * 10 + tanggalJamSetting[0]);
 }
 void loop() {
+
+//--------------------------------------------------------------------------------------------------
   if (REMOTEPRESS) {
     //if (results.value != 0xFFFFFFFF)
-      rsl = results.value;
+    rsl = results.value;
     Serial.println(results.value, HEX);
     irrecv.resume(); // Receive the next value
 
@@ -83,8 +91,13 @@ void loop() {
         mode = EDIT;
         startSetting = true;
       }
+      else if (mode == EDIT) {
+        mode = STDBY;
+        startSetting = false;
+      }
       else {
-        //mode = STDBY;
+        // mode = STDBY;
+        // startSetting = false;
       }
     }
 
@@ -133,13 +146,34 @@ void loop() {
       if (jamdigitPos > 14) {
         mode = STDBY;
         updateRTC();
+        changeDay = true;
       }
     }
     //Serial.println(rsl, HEX);
   }
+//---------------------------------------------------------------------------------------------  cek time
+  //update jadwal
+  if (changeDay) {
+    dataJadwal(month, dayOfMonth);
 
+    STARTDIGIT
+    byte i = 2; //array start from 1
+    if(!digitalRead(MK_IMSAK)) {i=1;}//array start from 2
+    for (; i <= 6; i++) { 
+      displayJamMenit(dataJam[i], dataMenit[i]);
+    }
+    ENDDIGIT
+
+    lastDay = dayOfMonth; lastMonth = month;
+    changeDay = false;
+  }
+//----------------------------------------------------------------------------------------------  STDBY
+  //global time update
   if (mode == STDBY) {
     if (timeUpdate) {
+      timeUpdate = false;
+      timeTick = !timeTick;
+
       readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
 
       STARTDIGITTHN
@@ -147,22 +181,16 @@ void loop() {
       displayJamMenitThn(hour, minute, second);
       ENDDIGITTHN
 
-      updateJadwal(month, dayOfMonth, hour, minute);
-
-      timeUpdate = false;
-      if (tempReg > (0 - BUZZERSHOLAT)) {
-        tempReg--;
-      }
-
-      ledStat = !ledStat;
+      //bandingkan waktu sekarang dgn jadwal sholat
+      bandingkanJadwal(month, dayOfMonth, hour, minute);
 
       if ((lastDay != dayOfMonth) && (lastMonth != month)) {
-        dateUpdate = true;
+        changeDay = true;
       }
 
     }
   }
-
+//---------------------------------------------------------------------------------------- EDIT
   if (mode == EDIT) {
     if (startSetting) {
       STARTDIGITTHN
@@ -176,27 +204,21 @@ void loop() {
     }
   }
 
-  if (dateUpdate) {
-    dataJadwal(month, dayOfMonth);
-
-    STARTDIGIT
-    for (int i = 1; i <= 6; i++) { //array start from 1
-      displayJamMenit(dataJam[i], dataMenit[i]);
-    }
-    ENDDIGIT
-
-    lastDay = dayOfMonth; lastMonth = month;
-    dateUpdate = false;
-  }
-
-
+//------------------------------------------------------------------------------------- ALARM
   if (mode == ALARM) {
-    //Buzzer masuk waktu sholat                                      //-------------------------------------------------
+    //Buzzer masuk waktu sholat                                      
+    if (timeUpdate) {
+      if (tempReg > (0 - BUZZERSHOLAT)) {
+        tempReg--;
+      }
+      timeUpdate = false;
+      timeTick = !timeTick;
+    }
 
     if ((tempReg >= (IQOMAT - BUZZERON))) {
       if (!buzzerStatus) {
         buzzerStatus = HIGH;
-        Serial.println("Buzzer On ");
+        Serial.println("Buzzer On .");
       }
     } else {
       if (buzzerStatus) {
@@ -207,37 +229,29 @@ void loop() {
     digitalWrite(pinBuzzer, buzzerStatus);
 
     int x = tempReg / 60;
-    if (x > 0) {  //more than 1 minute
-      digitalWrite(led, ledStat);
-      if (ledStat) {
+    if (x > 0) {              //more than 1 minute
+      if (timeTick) {
         Serial.print("Iqomat:");
         Serial.print(x, DEC);
         Serial.println(" menit");
         delay(200);
-        ledStat = false;
+        timeTick = false;
       }
     } else if (tempReg >= 0) { //less than 1 minute
-      if (ledStat) {
+      if (timeTick) {
         Serial.print("Iqomat:");
         Serial.print(tempReg, DEC);
         Serial.println(" detik");
         delay(200);
-        ledStat = false;
+        timeTick = false;
 
-        //ToDo: Display counter
-        STARTDIGIT
-        displayMenitDetik(x, tempReg % 60);
-        ENDDIGIT
+        STARTDIGITTHN
+        displayTglBulanTahun(dayOfMonth, month, year);
+        displayJamMenitThn(0, x, tempReg % 60);
+        ENDDIGITTHN
 
         if (tempReg == 0) {
           Serial.println("Sholat time!");
-          //ToDo: Reset display counter
-          STARTDIGIT
-          for (int i = 1; i <= 6; i++) { //array start from 1
-            displayJamMenit(dataJam[i], dataMenit[i]);
-          }
-          ENDDIGIT
-
         }
       }
     }
@@ -245,13 +259,13 @@ void loop() {
 
     if (tempReg <= 0) { //if iqomat time up
       // Prayer start ..............
-      if (ledStat) {
+      if (timeTick) {
         digitalWrite(pinBuzzer, HIGH);
         Serial.print("Buzzer On ");
         delay(500);
         digitalWrite(pinBuzzer, LOW);
         Serial.println("Buzzer Off ");
-        ledStat = false;
+        timeTick = false;
       }
     }
     if (tempReg <= (0 - BUZZERSHOLAT)) {
@@ -309,7 +323,7 @@ void readDS3231time(byte *second,
 }
 
 
-void updateJadwal(uint8_t bulan, uint8_t tgl, uint8_t jam, uint8_t menit) {
+void bandingkanJadwal(uint8_t bulan, uint8_t tgl, uint8_t jam, uint8_t menit) {
   if (checkMinuteChange(menit)) {
     if (checkDayChange(tgl)) {
       dataJadwal(bulan, tgl);
@@ -414,3 +428,4 @@ void debugJam() {
   Serial.print(minute, DEC); Serial.print(":");
   Serial.print(second, DEC); Serial.println(" ");
 }
+

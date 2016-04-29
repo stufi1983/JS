@@ -1,3 +1,4 @@
+#define RECV_PIN  A0
 
 enum namaTombolRemote {
   CHMIN,  CH,  CHPLUS,
@@ -19,7 +20,6 @@ long tombolRemote[] = {
   0xFF42BD,  0xFF4AB5,  0xFF52AD
 };
 
-#define RECV_PIN  A0
 IRrecv irrecv(RECV_PIN);
 decode_results results;
 #define REMOTEPRESS irrecv.decode(&results)
