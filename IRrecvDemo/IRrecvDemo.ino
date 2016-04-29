@@ -1,7 +1,11 @@
+#include <EEPROM.h>
+
 #include "MKeySetting.h"
+
 #include <IRremote.h>
 #include "IRremoteSetting.h"
 long rsl = 0;
+
 
 byte tanggalJam[14];//yp=0,ys=0,yr=2,ysr=0,mp=0,ms=0,dp=0,ds=0,sp=0,ss=0,mp=0,ms=0,hp=0,hs=0
 #include "IC4094Setting.h"
@@ -36,12 +40,31 @@ static  uint8_t dataMenit[7];
 
 static unsigned char lastMinute = 0;
 
+byte timeAdj = 0;
+byte offset = 0; bool minus = false;
+
+
 void setup()
 {
+  Serial.begin(9600); //Serial
+
+  
+        timeAdj = EEPROM.read(0);
+      if (timeAdj >= 127) {
+        offset = timeAdj - 127;
+        minus = false;
+      }
+      else if (timeAdj < 127) {
+        offset = 127 - timeAdj;
+        minus = true;
+      }
+  Serial.print("Offset:"); if(minus)Serial.print("-");
+  Serial.println(offset);
+
+
   irrecv.enableIRIn(); // Start the IR receiver
   enable4094(); //Start 4094
   Wire.begin(); //RTC
-  Serial.begin(9600); //Serial
 
   //uncomment to set RTC time
   //setDS3231time( 00,  38,  15,  02,  19,  04,  16); delay(65535);
@@ -56,7 +79,7 @@ void setup()
   //mode = EDIT;
 
   pinMode(pinBuzzer, OUTPUT);
-  
+
   //JP IMSAK
   pinMode(MK_IMSAK, INPUT);           // set pin to input
   digitalWrite(MK_IMSAK, HIGH);       // turn on pullup resistors
@@ -79,11 +102,11 @@ void updateRTC() {
 }
 void loop() {
 
-//--------------------------------------------------------------------------------------------------
+  //--------------------------------------------------------------------------------------------------
   if (REMOTEPRESS) {
     //if (results.value != 0xFFFFFFFF)
     rsl = results.value;
-    Serial.println(results.value, HEX);
+    //Serial.println(results.value, HEX);
     irrecv.resume(); // Receive the next value
 
     if (rsl == tombolRemote[EQ]) {
@@ -99,6 +122,48 @@ void loop() {
         // mode = STDBY;
         // startSetting = false;
       }
+    }
+
+
+    if (rsl == tombolRemote[CH]) {
+      changeDay = true;
+    }
+    if (rsl == tombolRemote[CHMIN] || rsl == tombolRemote[CHPLUS]) {
+      if (rsl == tombolRemote[CHMIN]) {
+        EEPROM.write(0, timeAdj - 1);
+      }
+      if (rsl == tombolRemote[CHPLUS]) {
+        EEPROM.write(0, timeAdj + 1);
+      }
+      timeAdj = EEPROM.read(0);
+      //bool minus = false;
+      //byte offset;
+      if (timeAdj >= 127) {
+        offset = timeAdj - 127;
+        minus = false;
+      }
+      else if (timeAdj < 127) {
+        offset = 127 - timeAdj;
+        minus = true;
+      }
+
+      if(minus)Serial.print("-");Serial.println(offset);
+      STARTDIGIT
+      byte i = 2; //array start from 1
+      if (!digitalRead(MK_IMSAK)) {
+        i = 1; //array start from 2
+      }
+      for (; i <= 6; i++) {
+        displayDigit(offset % 10);
+        displayDigit(offset / 10);
+        if (minus) {
+          displayDigit(10);
+        } else {
+          displayDigit(11);
+        }
+        displayDigit(11);
+      }
+      ENDDIGIT
     }
 
     if (mode == EDIT) {
@@ -151,15 +216,17 @@ void loop() {
     }
     //Serial.println(rsl, HEX);
   }
-//---------------------------------------------------------------------------------------------  cek time
+  //---------------------------------------------------------------------------------------------  cek time
   //update jadwal
   if (changeDay) {
     dataJadwal(month, dayOfMonth);
 
     STARTDIGIT
     byte i = 2; //array start from 1
-    if(!digitalRead(MK_IMSAK)) {i=1;}//array start from 2
-    for (; i <= 6; i++) { 
+    if (!digitalRead(MK_IMSAK)) {
+      i = 1; //array start from 2
+    }
+    for (; i <= 6; i++) {
       displayJamMenit(dataJam[i], dataMenit[i]);
     }
     ENDDIGIT
@@ -167,7 +234,7 @@ void loop() {
     lastDay = dayOfMonth; lastMonth = month;
     changeDay = false;
   }
-//----------------------------------------------------------------------------------------------  STDBY
+  //----------------------------------------------------------------------------------------------  STDBY
   //global time update
   if (mode == STDBY) {
     if (timeUpdate) {
@@ -190,7 +257,7 @@ void loop() {
 
     }
   }
-//---------------------------------------------------------------------------------------- EDIT
+  //---------------------------------------------------------------------------------------- EDIT
   if (mode == EDIT) {
     if (startSetting) {
       STARTDIGITTHN
@@ -204,9 +271,9 @@ void loop() {
     }
   }
 
-//------------------------------------------------------------------------------------- ALARM
+  //------------------------------------------------------------------------------------- ALARM
   if (mode == ALARM) {
-    //Buzzer masuk waktu sholat                                      
+    //Buzzer masuk waktu sholat
     if (timeUpdate) {
       if (tempReg > (0 - BUZZERSHOLAT)) {
         tempReg--;
@@ -355,6 +422,23 @@ void dataJadwal(uint8_t bulan, uint8_t tgl) {
       default: break;
     }
 
+    if (minus) {
+      if (dataMenit[i] >= offset) {
+        dataMenit[i] = dataMenit[i] - offset;
+      } else {
+        dataMenit[i] = dataMenit[i]+60 - offset;
+        dataJam[i]=dataJam[i]-1;
+      }
+    }
+    else {
+        if ((dataMenit[i] + offset)<60) {
+        dataMenit[i] = dataMenit[i] + offset;
+      } else {
+        dataMenit[i] = dataMenit[i] + offset - 60;
+        dataJam[i]=dataJam[i]+1;
+      }
+     
+    }
     Serial.print(dataJam[i], DEC);
     Serial.print(":");
     Serial.print(dataMenit[i], DEC);
@@ -368,8 +452,8 @@ void dataJadwal(uint8_t bulan, uint8_t tgl) {
     Serial.print(pgm_read_byte_near(jadwalJI[1][i]),DEC);
     Serial.print(" ");
   }
-  Serial.println("");
   #endif*/
+  Serial.println("");
 }
 
 boolean checkMinuteChange(uint8_t menit) {

@@ -2,10 +2,11 @@
 //Pin 8 connected  Strobe (pin 1)
 //Pin 9 connected  Data (pin 2)
 //Pin 10 connected  Clock (pin 3)
+
 #define strobePin 8
 #define dataPin  9
 #define clockPin  10
-byte segChar[] = {0x04, 0x2f, 0x18, 0x09, 0x23, 0x41, 0x40, 0x0f, 0x00, 0x01};
+byte segChar[] = {0x04, 0x2f, 0x18, 0x09, 0x23, 0x41, 0x40, 0x0f, 0x00, 0x01,0x7b,0x7f};
 #define STARTDIGIT digitalWrite(strobePin, LOW);
 #define ENDDIGIT digitalWrite(strobePin, HIGH);
 
