@@ -19,14 +19,14 @@ bool changeDay = false; byte lastDay = 0; byte lastMonth = 0;
 
 #include <TimerOne.h>
 volatile bool timeUpdate = false;
-enum mode {RUN, EDIT, ALARM, STDBY};
+enum mode {RUN, EDIT, ALARM, STDBY, EDITOFF, SETIQOMAH};
 byte mode = EDIT;
 
 #include <avr/pgmspace.h>
 #include "jadwal_2.h"
 
 #define IQOMAT 10//300 //detik                                                            
-#define BUZZERON 3 //detik
+#define BUZZERON 3 //detik WAKTU SHOLAT
 #define BUZZERSHOLAT 5 //kali
 #define pinBuzzer A1
 boolean buzzerStatus = false;
@@ -43,22 +43,27 @@ static unsigned char lastMinute = 0;
 byte timeAdj = 0;
 byte offset = 0; bool minus = false;
 
-
+unsigned char iadj = 1;
+byte timeAdji[7] = {0, 0, 0, 0, 0, 0, 0};
 void setup()
 {
   Serial.begin(9600); //Serial
 
-  
-        timeAdj = EEPROM.read(0);
-      if (timeAdj >= 127) {
-        offset = timeAdj - 127;
-        minus = false;
-      }
-      else if (timeAdj < 127) {
-        offset = 127 - timeAdj;
-        minus = true;
-      }
-  Serial.print("Offset:"); if(minus)Serial.print("-");
+  for (byte t = 0; t < 7; t++) {
+    timeAdji[t + 1] = EEPROM.read(t + 1);
+    if (timeAdji[t + 1] == 255) EEPROM.write(t + 1, 0);
+  }
+
+  timeAdj = EEPROM.read(0);
+  if (timeAdj >= 127) {
+    offset = timeAdj - 127;
+    minus = false;
+  }
+  else if (timeAdj < 127) {
+    offset = 127 - timeAdj;
+    minus = true;
+  }
+  Serial.print("Offset:"); if (minus)Serial.print("-");
   Serial.println(offset);
 
 
@@ -83,6 +88,7 @@ void setup()
   //JP IMSAK
   pinMode(MK_IMSAK, INPUT);           // set pin to input
   digitalWrite(MK_IMSAK, HIGH);       // turn on pullup resistors
+
 
 }
 byte tanggalJamSetting[14];
@@ -122,48 +128,89 @@ void loop() {
         // mode = STDBY;
         // startSetting = false;
       }
+      deBounchingIR();
+    }
+    //--------------------------------------------------------------------------- SET IQOMAH
+    if (mode == SETIQOMAH) {
+      if (rsl == tombolRemote[CHMIN] || rsl == tombolRemote[CHPLUS]) {
+        if (rsl == tombolRemote[CHMIN]) {
+          if (timeAdji[iadj] > 0) timeAdji[iadj]--;
+          EEPROM.write(iadj, timeAdji[iadj]);
+        }
+        if (rsl == tombolRemote[CHPLUS]) {
+          if (timeAdji[iadj] < 255) timeAdji[iadj]++;
+          EEPROM.write(iadj, timeAdji[iadj]);
+        }
+      }
     }
 
-
-    if (rsl == tombolRemote[CH]) {
-      changeDay = true;
+    if (rsl == tombolRemote[MIN] || rsl == tombolRemote[PLUS]) {
+      mode = SETIQOMAH;
+      if (rsl == tombolRemote[PLUS]) {
+        if (iadj < 6) iadj++;
+        else iadj = 1;
+      }
+      if (rsl == tombolRemote[MIN]) {
+        if (iadj > 1) iadj--;
+        else iadj = 6;
+      }
+      deBounchingIR();
     }
-    if (rsl == tombolRemote[CHMIN] || rsl == tombolRemote[CHPLUS]) {
-      if (rsl == tombolRemote[CHMIN]) {
-        EEPROM.write(0, timeAdj - 1);
-      }
-      if (rsl == tombolRemote[CHPLUS]) {
-        EEPROM.write(0, timeAdj + 1);
-      }
-      timeAdj = EEPROM.read(0);
-      //bool minus = false;
-      //byte offset;
-      if (timeAdj >= 127) {
-        offset = timeAdj - 127;
-        minus = false;
-      }
-      else if (timeAdj < 127) {
-        offset = 127 - timeAdj;
-        minus = true;
-      }
 
-      if(minus)Serial.print("-");Serial.println(offset);
+    if (mode == SETIQOMAH) {
       STARTDIGIT
       byte i = 2; //array start from 1
       if (!digitalRead(MK_IMSAK)) {
         i = 1; //array start from 2
       }
       for (; i <= 6; i++) {
-        displayDigit(offset % 10);
-        displayDigit(offset / 10);
-        if (minus) {
-          displayDigit(10);
+        //Serial.print(iadj);
+        if (i == iadj) {
+          timeAdji[i] = EEPROM.read(i);
+          displayJamMenit(0, timeAdji[i]);
+          Serial.print("00"); Serial.print(":"); Serial.print(timeAdji[i]); Serial.print(" ");
+          //i++;
         } else {
-          displayDigit(11);
+          //continue;
+          displayJamMenit(dataJam[i], dataMenit[i]);
+          Serial.print(dataJam[i]); Serial.print(":"); Serial.print(dataMenit[i]); Serial.print(" ");
         }
-        displayDigit(11);
       }
+      Serial.println();
       ENDDIGIT
+
+      if (rsl == tombolRemote[CH] && mode == SETIQOMAH) {
+        mode = STDBY;
+        //updateRTC();
+        changeDay = true;
+        deBounchingIR();
+      }
+    }
+
+    //---------------------------------------------------- offset adj
+    if (rsl == tombolRemote[CH] && mode == EDITOFF) {
+      changeDay = true;
+      deBounchingIR();
+      mode = STDBY;
+    } else if (rsl == tombolRemote[CH] && mode == STDBY) {
+      deBounchingIR();
+      mode = EDITOFF;
+      displayOffset();
+
+      deBounchingIR();
+    }
+    if (mode == EDITOFF) {
+      if (rsl == tombolRemote[CHMIN] || rsl == tombolRemote[CHPLUS]) {
+        if (rsl == tombolRemote[CHMIN]) {
+          EEPROM.write(0, timeAdj - 1);
+        }
+        if (rsl == tombolRemote[CHPLUS]) {
+          EEPROM.write(0, timeAdj + 1);
+        }
+        displayOffset();
+
+        deBounchingIR();
+      }
     }
 
     if (mode == EDIT) {
@@ -212,6 +259,7 @@ void loop() {
         mode = STDBY;
         updateRTC();
         changeDay = true;
+        deBounchingIR();
       }
     }
     //Serial.println(rsl, HEX);
@@ -236,7 +284,7 @@ void loop() {
   }
   //----------------------------------------------------------------------------------------------  STDBY
   //global time update
-  if (mode == STDBY) {
+  if (mode == STDBY || mode == SETIQOMAH) {
     if (timeUpdate) {
       timeUpdate = false;
       timeTick = !timeTick;
@@ -426,18 +474,18 @@ void dataJadwal(uint8_t bulan, uint8_t tgl) {
       if (dataMenit[i] >= offset) {
         dataMenit[i] = dataMenit[i] - offset;
       } else {
-        dataMenit[i] = dataMenit[i]+60 - offset;
-        dataJam[i]=dataJam[i]-1;
+        dataMenit[i] = dataMenit[i] + 60 - offset;
+        dataJam[i] = dataJam[i] - 1;
       }
     }
     else {
-        if ((dataMenit[i] + offset)<60) {
+      if ((dataMenit[i] + offset) < 60) {
         dataMenit[i] = dataMenit[i] + offset;
       } else {
         dataMenit[i] = dataMenit[i] + offset - 60;
-        dataJam[i]=dataJam[i]+1;
+        dataJam[i] = dataJam[i] + 1;
       }
-     
+
     }
     Serial.print(dataJam[i], DEC);
     Serial.print(":");
@@ -468,7 +516,7 @@ boolean checkDayChange(uint8_t tgl) {
     return true;
   } else return false;
 }
-
+//-------------------------------------------------------- ganti iqomat disini
 void compareRTC(uint8_t jam, uint8_t menit) {
   if (jam == dataJam[1] && menit == dataMenit[1]) {
     mode = ALARM;
@@ -478,27 +526,27 @@ void compareRTC(uint8_t jam, uint8_t menit) {
   } else if (jam == dataJam[2] && menit == dataMenit[2]) {
     mode = ALARM;
     //kata = FS(kataS);
-    tempReg = IQOMAT;
+    tempReg = timeAdji[1];
     Serial.print("Subuh"); debugJam();
   } else if (jam == dataJam[3] && menit == dataMenit[3]) {
     mode = ALARM;
     //kata = FS(kataD);
-    tempReg = IQOMAT;
+    tempReg = timeAdji[2];
     Serial.print("Dhuhur"); debugJam();
   } else if (jam == dataJam[4] && menit == dataMenit[4]) {
-    mode = ALARM;
+    mode = timeAdji[3];
     //kata = FS(kataA);
-    tempReg = IQOMAT;
+    tempReg = timeAdji[4];
     Serial.print("Ashar"); debugJam();
   } else if (jam == dataJam[5] && menit == dataMenit[5]) {
     mode = ALARM;
     //kata = FS(kataM);
-    tempReg = IQOMAT;
+    tempReg = timeAdji[5];
     Serial.print("Magrib"); debugJam();
   } else if (jam == dataJam[6] && menit == dataMenit[6]) {
     mode = ALARM;
     //kata = FS(kataI);
-    tempReg = IQOMAT;
+    tempReg = timeAdji[6];
     Serial.print("Isya"); debugJam();
   } else return;
 
@@ -513,3 +561,41 @@ void debugJam() {
   Serial.print(second, DEC); Serial.println(" ");
 }
 
+void deBounchingIR() {
+  digitalWrite(pinBuzzer, HIGH);
+  delay(100);
+  digitalWrite(pinBuzzer, LOW);
+  delay(200);
+}
+
+void displayOffset() {
+  timeAdj = EEPROM.read(0);
+  //bool minus = false;
+  //byte offset;
+  if (timeAdj >= 127) {
+    offset = timeAdj - 127;
+    minus = false;
+  }
+  else if (timeAdj < 127) {
+    offset = 127 - timeAdj;
+    minus = true;
+  }
+
+  if (minus)Serial.print("-"); Serial.println(offset);
+  STARTDIGIT
+  byte i = 2; //array start from 1
+  if (!digitalRead(MK_IMSAK)) {
+    i = 1; //array start from 2
+  }
+  for (; i <= 6; i++) {
+    displayDigit(offset % 10);
+    displayDigit(offset / 10);
+    if (minus) {
+      displayDigit(10);
+    } else {
+      displayDigit(11);
+    }
+    displayDigit(11);
+  }
+  ENDDIGIT
+}
