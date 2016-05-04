@@ -9,7 +9,8 @@ long rsl = 0;
 
 byte tanggalJam[14];//yp=0,ys=0,yr=2,ysr=0,mp=0,ms=0,dp=0,ds=0,sp=0,ss=0,mp=0,ms=0,hp=0,hs=0
 #include "IC4094Setting.h"
-
+#define DISPLAYMATI  10
+#define DISPLAYNYALA 3
 //RTC  DS3231 //A4 - SDA //A5 - SCL
 #include <Wire.h>
 #define DS3231_I2C_ADDRESS 0x68
@@ -19,7 +20,7 @@ bool changeDay = false; byte lastDay = 0; byte lastMonth = 0;
 
 #include <TimerOne.h>
 volatile bool timeUpdate = false;
-enum mode {RUN, EDIT, ALARM, STDBY, EDITOFF, SETIQOMAH};
+enum mode {RUN, EDIT, ALARM, STDBY, EDITOFF, SETIQOMAH, MATI};
 byte mode = EDIT;
 
 #include <avr/pgmspace.h>
@@ -48,6 +49,12 @@ byte timeAdji[7] = {0, 0, 0, 0, 0, 0, 0};
 void setup()
 {
   Serial.begin(9600); //Serial
+
+  pinMode(MK_ENTER, INPUT_PULLUP);
+  pinMode(MK_UP, INPUT_PULLUP);
+  pinMode(MK_DOWN, INPUT_PULLUP);
+  pinMode(MK_RIGHT, INPUT_PULLUP);
+  pinMode(MK_LEFT, INPUT_PULLUP);
 
   for (byte t = 0; t < 7; t++) {
     timeAdji[t + 1] = EEPROM.read(t + 1);
@@ -132,25 +139,25 @@ void loop() {
     }
     //--------------------------------------------------------------------------- SET IQOMAH
     if (mode == SETIQOMAH) {
-      if (rsl == tombolRemote[CHMIN] || rsl == tombolRemote[CHPLUS]) {
-        if (rsl == tombolRemote[CHMIN]) {
+      if (rsl == tombolRemote[CHMIN] || !digitalRead(MK_DOWN) || rsl == tombolRemote[CHPLUS] || !digitalRead(MK_UP)) {
+        if (rsl == tombolRemote[CHMIN] || !digitalRead(MK_DOWN)) {
           if (timeAdji[iadj] > 0) timeAdji[iadj]--;
           EEPROM.write(iadj, timeAdji[iadj]);
         }
-        if (rsl == tombolRemote[CHPLUS]) {
+        if (rsl == tombolRemote[CHPLUS] || !digitalRead(MK_UP)) {
           if (timeAdji[iadj] < 255) timeAdji[iadj]++;
           EEPROM.write(iadj, timeAdji[iadj]);
         }
       }
     }
 
-    if (rsl == tombolRemote[MIN] || rsl == tombolRemote[PLUS]) {
+    if (rsl == tombolRemote[MIN] || !digitalRead(MK_LEFT) || rsl == tombolRemote[PLUS] || !digitalRead(MK_RIGHT)) {
       mode = SETIQOMAH;
-      if (rsl == tombolRemote[PLUS]) {
+      if (rsl == tombolRemote[PLUS] || !digitalRead(MK_RIGHT)) {
         if (iadj < 6) iadj++;
         else iadj = 1;
       }
-      if (rsl == tombolRemote[MIN]) {
+      if (rsl == tombolRemote[MIN] || !digitalRead(MK_LEFT)) {
         if (iadj > 1) iadj--;
         else iadj = 6;
       }
@@ -179,7 +186,7 @@ void loop() {
       Serial.println();
       ENDDIGIT
 
-      if (rsl == tombolRemote[CH] && mode == SETIQOMAH) {
+      if ((rsl == tombolRemote[CH] || !digitalRead(MK_ENTER)) && mode == SETIQOMAH) {
         mode = STDBY;
         //updateRTC();
         changeDay = true;
@@ -188,11 +195,11 @@ void loop() {
     }
 
     //---------------------------------------------------- offset adj
-    if (rsl == tombolRemote[CH] && mode == EDITOFF) {
+    if ((rsl == tombolRemote[CH] || !digitalRead(MK_ENTER)) && mode == EDITOFF) {
       changeDay = true;
       deBounchingIR();
       mode = STDBY;
-    } else if (rsl == tombolRemote[CH] && mode == STDBY) {
+    } else if ((rsl == tombolRemote[CH] || !digitalRead(MK_ENTER)) && mode == STDBY) {
       deBounchingIR();
       mode = EDITOFF;
       displayOffset();
@@ -200,11 +207,11 @@ void loop() {
       deBounchingIR();
     }
     if (mode == EDITOFF) {
-      if (rsl == tombolRemote[CHMIN] || rsl == tombolRemote[CHPLUS]) {
-        if (rsl == tombolRemote[CHMIN]) {
+      if (rsl == tombolRemote[CHMIN]  || !digitalRead(MK_DOWN) || rsl == tombolRemote[CHPLUS] || !digitalRead(MK_UP)) {
+        if (rsl == tombolRemote[CHMIN] || !digitalRead(MK_DOWN)) {
           EEPROM.write(0, timeAdj - 1);
         }
-        if (rsl == tombolRemote[CHPLUS]) {
+        if (rsl == tombolRemote[CHPLUS] || !digitalRead(MK_UP)) {
           EEPROM.write(0, timeAdj + 1);
         }
         displayOffset();
@@ -282,6 +289,16 @@ void loop() {
     lastDay = dayOfMonth; lastMonth = month;
     changeDay = false;
   }
+
+  //---------------------------------------------------------------------------------------------- MATI
+  if (mode == MATI) {
+    readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
+    if ((hour < DISPLAYMATI) && (hour > DISPLAYNYALA)) {
+      mode == STDBY;
+      timeUpdate = true;
+      changeDay = true;
+    }
+  }
   //----------------------------------------------------------------------------------------------  STDBY
   //global time update
   if (mode == STDBY || mode == SETIQOMAH) {
@@ -290,6 +307,7 @@ void loop() {
       timeTick = !timeTick;
 
       readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
+
 
       STARTDIGITTHN
       displayTglBulanTahun(dayOfMonth, month, year);
@@ -301,6 +319,22 @@ void loop() {
 
       if ((lastDay != dayOfMonth) && (lastMonth != month)) {
         changeDay = true;
+      }
+
+      if ((hour >= DISPLAYMATI) && (hour <= DISPLAYNYALA)) {
+        mode == MATI;             //kalau tidak ingin mati beri komentar
+
+        STARTDIGITTHN
+        for (byte x = 0; x < 14; x++) {
+          displayDigitThn(11);
+        }
+        ENDDIGITTHN
+
+        STARTDIGIT
+        for (byte x = 0; x < 24; x++) {
+          displayDigit(12);
+        }
+        ENDDIGIT
       }
 
     }
